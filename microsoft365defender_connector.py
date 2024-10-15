@@ -1250,86 +1250,161 @@ class Microsoft365Defender_Connector(BaseConnector):
         action_result = self.add_action_result(ActionResult(dict(param)))
         self.save_progress("In action handler for: {0}".format(self.get_action_identifier()))
         config = self.get_config()
+        poll_option = config.get(DEFENDER_POLL_OPTION)
 
-        # params for list incidents
-        poll_filter, offset, orderby = config.get(DEFENDER_INCIDENT_FILTER, ""), 0, "lastUpdateDateTime"
-        start_time_scheduled_poll = config.get(DEFENDER_CONFIG_START_TIME_SCHEDULED_POLL)
-        last_modified_time = (datetime.now() - timedelta(days=7)).strftime(DEFENDER_APP_DT_STR_FORMAT)  # Let's fall back to the last 7 days
+        if poll_option in DEFENDER_INCIDENT_POLL_OPTIONS:
+            # params for list incidents
+            poll_filter, offset, orderby = config.get(DEFENDER_INCIDENT_FILTER, ""), 0, "lastUpdateDateTime"
+            start_time_scheduled_poll = config.get(DEFENDER_CONFIG_START_TIME_SCHEDULED_POLL)
+            last_modified_time = (datetime.now() - timedelta(days=7)).strftime(DEFENDER_APP_DT_STR_FORMAT)  # Let's fall back to the last 7 days
 
-        if start_time_scheduled_poll:
-            ret_val = self._check_date_format(action_result, start_time_scheduled_poll)
-            # if date format is not valid
-            if phantom.is_fail(ret_val):
-                self.save_progress(action_result.get_message())
-                return action_result.set_status(phantom.APP_ERROR)
+            if start_time_scheduled_poll:
+                ret_val = self._check_date_format(action_result, start_time_scheduled_poll)
+                # if date format is not valid
+                if phantom.is_fail(ret_val):
+                    self.save_progress(action_result.get_message())
+                    return action_result.set_status(phantom.APP_ERROR)
 
-            # set start time as the last modified time to, hence data is fetched from that point.
-            last_modified_time = start_time_scheduled_poll
-
-        if self.is_poll_now():
-            max_incidents = int(param.get(phantom.APP_JSON_CONTAINER_COUNT))
-        else:
-            max_incidents = config.get(DEFENDER_CONFIG_FIRST_RUN_MAX_INCIDENTS, DEFENDER_INCIDENT_DEFAULT_LIMIT_FOR_SCHEDULE_POLLING)
-            ret_val, max_incidents = self._validate_integer(action_result, max_incidents, "max_incidents")
-            if phantom.is_fail(ret_val):
-                return action_result.get_status()
-
-            if self._state.get(STATE_FIRST_RUN, True):
-                self._state[STATE_FIRST_RUN] = False
-            elif last_time := self._state.get(STATE_LAST_TIME):
-                last_modified_time = last_time
-
-        start_time_filter = f"lastUpdateDateTime ge {last_modified_time}"
-        poll_filter += start_time_filter if not poll_filter else f" and {start_time_filter}"
-
-        endpoint = "{0}{1}?$expand=alerts".format(DEFENDER_MSGRAPH_API_BASE_URL, DEFENDER_LIST_INCIDENTS_ENDPOINT)
-        incident_left = max_incidents
-        self.duplicate_container = 0
-        while incident_left > 0:
-            self.debug_print("making a rest with call with offset: {}, incident_left: {}".format(offset, incident_left))
-            incident_list = self._paginator(action_result, incident_left, offset, endpoint, poll_filter, orderby)
-
-            if not incident_list and not isinstance(incident_list, list):  # Failed to fetch incidents, regardless of the reason
-                self.save_progress("Failed to retrieve incidents")
-                return action_result.get_status()
-
-            self.save_progress(f"Successfully fetched {len(incident_list)} incidents.")
-
-            # Ingest the incidents
-            self.debug_print("Creating incidents and alerts artifacts")
-            for incident in incident_list:
-                # Get alerts for this incident
-                alerts = incident.pop("alerts", [])
-
-                # Create artifact from the incident and alerts
-                artifacts = [self._create_alert_artifacts(alert) for alert in alerts]
-                artifacts.append(self._create_incident_artifacts(incident))
-
-                # Ingest artifacts for incidents and alerts
-                try:
-                    self._ingest_artifacts_new(artifacts, name=incident["displayName"], key=incident["id"])
-                except Exception as e:
-                    self.debug_print("Error occurred while saving artifacts for incidents. Error: {}".format(str(e)))
+                # set start time as the last modified time to, hence data is fetched from that point.
+                last_modified_time = start_time_scheduled_poll
 
             if self.is_poll_now():
-                break
+                max_incidents = int(param.get(phantom.APP_JSON_CONTAINER_COUNT))
+            else:
+                max_incidents = config.get(DEFENDER_CONFIG_FIRST_RUN_MAX_INCIDENTS, DEFENDER_INCIDENT_DEFAULT_LIMIT_FOR_SCHEDULE_POLLING)
+                ret_val, max_incidents = self._validate_integer(action_result, max_incidents, "max_incidents")
+                if phantom.is_fail(ret_val):
+                    return action_result.get_status()
 
-            if incident_list:
-                if DEFENDER_JSON_LAST_MODIFIED not in incident_list[-1]:
-                    return action_result.set_status(
-                        phantom.APP_ERROR, "Could not extract {} from latest ingested " "incident.".format(DEFENDER_JSON_LAST_MODIFIED)
-                    )
+                if self._state.get(STATE_FIRST_RUN, True):
+                    self._state[STATE_FIRST_RUN] = False
+                elif last_time := self._state.get(STATE_LAST_TIME):
+                    last_modified_time = last_time
 
-                self._state[STATE_LAST_TIME] = incident_list[-1].get(DEFENDER_JSON_LAST_MODIFIED)
-                self.save_state(self._state)
+            start_time_filter = f"lastUpdateDateTime ge {last_modified_time}"
+            poll_filter += start_time_filter if not poll_filter else f" and {start_time_filter}"
 
-            offset += incident_left
-            incident_left = self.duplicate_container
+            endpoint = "{0}{1}?$expand=alerts".format(DEFENDER_MSGRAPH_API_BASE_URL, DEFENDER_LIST_INCIDENTS_ENDPOINT)
+            incident_left = max_incidents
             self.duplicate_container = 0
+            while incident_left > 0:
+                self.debug_print("making a rest with call with offset: {}, incident_left: {}".format(offset, incident_left))
+                incident_list = self._paginator(action_result, incident_left, offset, endpoint, poll_filter, orderby)
+
+                if not incident_list and not isinstance(incident_list, list):  # Failed to fetch incidents, regardless of the reason
+                    self.save_progress("Failed to retrieve incidents")
+                    return action_result.get_status()
+
+                self.save_progress(f"Successfully fetched {len(incident_list)} incidents.")
+
+                # Ingest the incidents
+                self.debug_print("Creating incidents and alerts artifacts")
+                for incident in incident_list:
+                    # Get alerts for this incident
+                    alerts = incident.pop("alerts", [])
+
+                    # Create artifact from the incident and alerts
+                    artifacts = [self._create_alert_artifacts(alert) for alert in alerts]
+                    artifacts.append(self._create_incident_artifacts(incident))
+
+                    # Ingest artifacts for incidents and alerts
+                    try:
+                        self._ingest_artifacts_new(artifacts, name=incident["displayName"], key=incident["id"], mode="incident")
+                    except Exception as e:
+                        self.debug_print("Error occurred while saving artifacts for incidents. Error: {}".format(str(e)))
+
+                if self.is_poll_now():
+                    break
+
+                if incident_list:
+                    if DEFENDER_JSON_LAST_MODIFIED not in incident_list[-1]:
+                        return action_result.set_status(
+                            phantom.APP_ERROR, "Could not extract {} from latest ingested " "incident.".format(DEFENDER_JSON_LAST_MODIFIED)
+                        )
+
+                    self._state[STATE_LAST_TIME] = incident_list[-1].get(DEFENDER_JSON_LAST_MODIFIED)
+                    self.save_state(self._state)
+
+                offset += incident_left
+                incident_left = self.duplicate_container
+                self.duplicate_container = 0
+
+        if poll_option in DEFENDER_ALERT_POLL_OPTIONS:
+            # params for list incidents
+            poll_filter, offset, orderby = config.get(DEFENDER_ALERT_FILTER, ""), 0, "lastUpdateDateTime"
+            start_time_scheduled_poll = config.get(DEFENDER_CONFIG_START_TIME_SCHEDULED_POLL)
+            last_modified_time = (datetime.now() - timedelta(days=7)).strftime(DEFENDER_APP_DT_STR_FORMAT)  # Let's fall back to the last 7 days
+
+            if start_time_scheduled_poll:
+                ret_val = self._check_date_format(action_result, start_time_scheduled_poll)
+                # if date format is not valid
+                if phantom.is_fail(ret_val):
+                    self.save_progress(action_result.get_message())
+                    return action_result.set_status(phantom.APP_ERROR)
+
+                # set start time as the last modified time to, hence data is fetched from that point.
+                last_modified_time = start_time_scheduled_poll
+
+            if self.is_poll_now():
+                max_alerts = int(param.get(phantom.APP_JSON_CONTAINER_COUNT))
+            else:
+                max_alerts = config.get(DEFENDER_CONFIG_FIRST_RUN_MAX_INCIDENTS, DEFENDER_INCIDENT_DEFAULT_LIMIT_FOR_SCHEDULE_POLLING)
+                ret_val, max_alerts = self._validate_integer(action_result, max_alerts, "max_incidents")
+                if phantom.is_fail(ret_val):
+                    return action_result.get_status()
+
+                if self._state.get(ALERTS_STATE_FIRST_RUN, True):
+                    self._state[ALERTS_STATE_FIRST_RUN] = False
+                elif last_time := self._state.get(ALERTS_STATE_LAST_TIME):
+                    last_modified_time = last_time
+
+            start_time_filter = f"lastUpdateDateTime ge {last_modified_time}"
+            poll_filter += start_time_filter if not poll_filter else f" and {start_time_filter}"
+
+            endpoint = "{0}{1}".format(DEFENDER_MSGRAPH_API_BASE_URL, DEFENDER_LIST_ALERTS_ENDPOINT)
+            alerts_left = max_alerts
+            self.duplicate_container = 0
+            while alerts_left > 0:
+                self.debug_print("making a rest with call with offset: {}, alerts_left: {}".format(offset, alerts_left))
+                alert_list = self._paginator(action_result, alerts_left, offset, endpoint, poll_filter, orderby)
+
+                if not alert_list and not isinstance(alert_list, list):  # Failed to fetch alerts, regardless of the reason
+                    self.save_progress("Failed to retrieve alerts")
+                    return action_result.get_status()
+
+                self.save_progress(f"Successfully fetched {len(alert_list)} alerts.")
+
+                # Ingest alerts
+                self.debug_print("Creating alerts artifacts")
+                for alert in alert_list:
+                    artifacts = []
+                    artifacts.append(self._create_alert_artifacts(alert))
+
+                    # Ingest artifacts for alerts
+                    try:
+                        self._ingest_artifacts_new(artifacts, name=alert["title"], key=alert["id"], mode="alert")
+                    except Exception as e:
+                        self.debug_print("Error occurred while saving artifacts for alerts. Error: {}".format(str(e)))
+
+                if self.is_poll_now():
+                    break
+
+                if alert_list:
+                    if DEFENDER_JSON_LAST_MODIFIED not in alert_list[-1]:
+                        return action_result.set_status(
+                            phantom.APP_ERROR, "Could not extract {} from latest ingested " "incident.".format(DEFENDER_JSON_LAST_MODIFIED)
+                        )
+
+                    self._state[STATE_LAST_TIME] = alert_list[-1].get(DEFENDER_JSON_LAST_MODIFIED)
+                    self.save_state(self._state)
+
+                offset += alerts_left
+                alerts_left = self.duplicate_container
+                self.duplicate_container = 0
 
         return action_result.set_status(phantom.APP_SUCCESS)
 
-    def _ingest_artifacts_new(self, artifacts, name, key):
+    def _ingest_artifacts_new(self, artifacts, name, key, mode):
         """Save the artifacts into the given container ID(cid) and if not given create new container with given key(name).
         Parameters:
             :param artifacts: list of artifacts of IoCs or incidents results
@@ -1338,7 +1413,10 @@ class Microsoft365Defender_Connector(BaseConnector):
         Returns:
             :return: status(phantom.APP_SUCCESS/phantom.APP_ERROR), message, cid(container_id)
         """
-        container = {"name": name, "description": "incident ingested using MS Defender API", "source_data_identifier": key}
+        if mode=="incident":
+            container = {"name": name, "description": "incident ingested using MS Defender API", "source_data_identifier": key}
+        elif mode=="alert":
+            container = {"name": name, "description": "alert ingested using MS Defender API", "source_data_identifier": key}
 
         ret_val, message, cid = self.save_container(container)
         if phantom.is_fail(ret_val):
@@ -1359,7 +1437,13 @@ class Microsoft365Defender_Connector(BaseConnector):
     @staticmethod
     def _create_alert_artifacts(alert):
 
-        return {"label": "alert", "name": alert.get("title"), "source_data_identifier": alert.get("id"), "data": alert, "cef": alert}
+        return {
+            "label": "alert",
+            "name": alert.get("title"),
+            "source_data_identifier": alert.get("id"),
+            "data": alert,
+            "cef": alert
+        }
 
     @staticmethod
     def _create_incident_artifacts(incident):

@@ -91,6 +91,7 @@ DEFENDER_INCIDENT_LIMIT = "limit"
 DEFENDER_INCIDENT_OFFSET = "offset"
 DEFENDER_INCIDENT_FILTER = "filter"
 DEFENDER_INCIDENT_ORDER_BY = "orderby"
+DEFENDER_ALERT_FILTER = "alert_filter"
 DEFENDER_ACTION_TAKEN = "action_taken"
 DEFENDER_INCIDENT_DEFAULT_LIMIT = 50
 DEFENDER_INCIDENT_DEFAULT_LIMIT_FOR_SCHEDULE_POLLING = 1000
@@ -99,6 +100,7 @@ DEFENDER_ALERT_DEFAULT_LIMIT = 2000
 DEFENDER_INCIDENT_DEFAULT_OFFSET = 0
 DEFENDER_NEXT_PAGE_TOKEN = "@odata.nextLink"
 DEFENDER_LIST_INCIDENTS_ENDPOINT = "/security/incidents"
+DEFENDER_LIST_ALERTS_ENDPOINT = "/security/alerts_v2"
 
 DEFENDER_INCIDENT_ID_ENDPOINT = "/security/incidents/{input}"
 DEFENDER_ALERTS_ID_ENDPOINT = "/security/alerts_v2/{input}"
@@ -205,12 +207,17 @@ DEFENDER_INCIDENT_KEYS_MAPPING = {"assign_to": "assignedTo"}
 DEFENDER_INVALID_INCIDENT_INPUT = "Please provide a valid value in the '{0}' parameter"
 
 # For on_poll action:
+DEFENDER_POLL_OPTION = "poll_option"
+DEFENDER_INCIDENT_POLL_OPTIONS = ("Incidents", "Incidents & Alerts")
+DEFENDER_ALERT_POLL_OPTIONS = ("Alerts", "Incidents & Alerts")
 DEFENDER_APP_DT_STR_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 DEFENDER_CONFIG_START_TIME_SCHEDULED_POLL = "start_time"
 DEFENDER_CONFIG_FIRST_RUN_MAX_INCIDENTS = "max_incidents_per_poll"
 STATE_FIRST_RUN = "first_run"
 STATE_LAST_TIME = "last_time"
 DEFENDER_JSON_LAST_MODIFIED = "lastUpdateDateTime"
+ALERTS_STATE_FIRST_RUN = "alerts_first_run"
+ALERTS_STATE_LAST_TIME = "alerts_last_time"
 LOG_UTC_SINCE_TIME_ERROR = "Please provide time in the span of UTC time since Unix epoch 1970-01-01T00:00:00Z."
 LOG_GREATER_EQUAL_TIME_ERROR = "Invalid {0}, can not be greater than or equal to current UTC time"
 LOG_CONFIG_TIME_POLL_NOW = "'Time range for POLL NOW' or 'Start Time for Schedule/Manual POLL' asset configuration parameter"
